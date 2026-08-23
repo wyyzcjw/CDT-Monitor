@@ -13,13 +13,10 @@ services:
       CDT_WORKERS: 4
       TZ: Asia/Shanghai
     volumes:
-      - cdt-data:/data
+      - .data:/data          # 若你原来是 ./data:/data，这里继续用 ./data:/data
     healthcheck:
       test: ["CMD", "/cdt-monitor", "healthcheck"]
       interval: 30s
       timeout: 5s
       retries: 3
       start_period: 10s
-
-volumes:
-  cdt-data:

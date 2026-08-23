@@ -6,14 +6,14 @@ services:
     restart: unless-stopped
     init: true
     ports:
-      - "43210:8080"
+      - "127.0.0.1:43210:8080"
     environment:
       CDT_DATA_DIR: /data
       CDT_LISTEN: :8080
       CDT_WORKERS: 4
       TZ: Asia/Shanghai
     volumes:
-      - .data:/data          # 若你原来是 ./data:/data，这里继续用 ./data:/data
+      - ./data:/data
     healthcheck:
       test: ["CMD", "/cdt-monitor", "healthcheck"]
       interval: 30s

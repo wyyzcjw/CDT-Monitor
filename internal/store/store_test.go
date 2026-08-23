@@ -81,6 +81,36 @@ func TestAccountIDsRemainStable(t *testing.T) {
 	}
 }
 
+func TestNormalizesTelegramDailyReportTime(t *testing.T) {
+	st, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	ctx := context.Background()
+	config := domain.Config{
+		AdminPassword:    "Strong-Password-42!",
+		TrafficThreshold: 95,
+		ShutdownMode:     "KeepCharging",
+		ThresholdAction:  "stop_and_notify",
+		APIInterval:      600,
+		Timezone:         "Asia/Shanghai",
+		Notifications: domain.NotificationConfig{
+			Telegram: domain.TelegramConfig{DailyReport: true, DailyReportTime: "08:30:00"},
+		},
+	}
+	if err = st.Setup(ctx, config); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := st.GetConfig(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Notifications.Telegram.DailyReportTime != "08:30" {
+		t.Fatalf("daily report time = %q, want 08:30", loaded.Notifications.Telegram.DailyReportTime)
+	}
+}
+
 func TestAPIIntervalMinimum(t *testing.T) {
 	st, err := Open(t.TempDir())
 	if err != nil {

@@ -102,6 +102,7 @@ func New(st *store.Store, eng *engine.Engine, assets fs.FS, logger *slog.Logger,
 	mux.Handle("GET /api/v1/logs", s.require("admin", http.HandlerFunc(s.logs)))
 	mux.Handle("DELETE /api/v1/logs", s.require("admin", http.HandlerFunc(s.clearLogs)))
 	mux.Handle("POST /api/v1/notifications/test/{channel}", s.require("admin", http.HandlerFunc(s.testNotification)))
+	mux.Handle("POST /api/v1/notifications/test-daily-report", s.require("admin", http.HandlerFunc(s.testDailyReport)))
 	mux.Handle("GET /api/v1/api-keys", s.require("admin", http.HandlerFunc(s.apiKeys)))
 	mux.Handle("POST /api/v1/api-keys", s.require("admin", http.HandlerFunc(s.createAPIKey)))
 	mux.Handle("DELETE /api/v1/api-keys/{id}", s.require("admin", http.HandlerFunc(s.revokeAPIKey)))
@@ -661,6 +662,15 @@ func (s *Server) testNotification(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	job, err := s.engine.Enqueue(r.Context(), engine.JobTestNotify, 0, engine.ParseNotifyPayload(channel), "")
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "enqueue_failed", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusAccepted, job)
+}
+
+func (s *Server) testDailyReport(w http.ResponseWriter, r *http.Request) {
+	job, err := s.engine.Enqueue(r.Context(), engine.JobDailyReport, 0, `{}`, "")
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "enqueue_failed", err.Error())
 		return

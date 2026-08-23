@@ -23,6 +23,20 @@ var sensitiveSettings = map[string]bool{
 	"notify_wh_secret":     true,
 }
 
+func normalizeClock(value, fallback string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return fallback
+	}
+	for _, layout := range []string{"15:04", "15:04:05"} {
+		parsed, err := time.Parse(layout, value)
+		if err == nil {
+			return parsed.Format("15:04")
+		}
+	}
+	return fallback
+}
+
 func boolSetting(settings map[string]string, key string, fallback bool) bool {
 	value, ok := settings[key]
 	if !ok {
@@ -108,6 +122,8 @@ func (s *Store) GetConfig(ctx context.Context) (domain.Config, error) {
 				Token:           valueOr(settings, "notify_tg_token", ""),
 				TokenConfigured: settings["notify_tg_token"] != "",
 				ChatID:          valueOr(settings, "notify_tg_chat_id", ""),
+				DailyReport:     boolSetting(settings, "notify_tg_daily_report", false),
+				DailyReportTime: normalizeClock(valueOr(settings, "notify_tg_daily_report_time", "00:00"), "00:00"),
 				ProxyType:       valueOr(settings, "notify_tg_proxy_type", "none"),
 				ProxyURL:        valueOr(settings, "notify_tg_proxy_url", ""),
 				ProxyIP:         valueOr(settings, "notify_tg_proxy_ip", ""),
@@ -197,33 +213,35 @@ func (s *Store) saveConfig(ctx context.Context, config domain.Config, setup bool
 		}
 
 		values := map[string]string{
-			"traffic_threshold":      strconv.Itoa(config.TrafficThreshold),
-			"enable_schedule_email":  strconv.FormatBool(config.EnableScheduleMail),
-			"shutdown_mode":          config.ShutdownMode,
-			"threshold_action":       config.ThresholdAction,
-			"keep_alive":             strconv.FormatBool(config.KeepAlive),
-			"api_interval":           strconv.Itoa(config.APIInterval),
-			"enable_billing":         strconv.FormatBool(config.EnableBilling),
-			"timezone":               config.Timezone,
-			"notify_email_enabled":   strconv.FormatBool(config.Notifications.Email.Enabled),
-			"notify_email":           config.Notifications.Email.To,
-			"notify_host":            config.Notifications.Email.Host,
-			"notify_port":            strconv.Itoa(config.Notifications.Email.Port),
-			"notify_username":        config.Notifications.Email.Username,
-			"notify_secure":          config.Notifications.Email.Security,
-			"notify_tg_enabled":      strconv.FormatBool(config.Notifications.Telegram.Enabled),
-			"notify_tg_chat_id":      config.Notifications.Telegram.ChatID,
-			"notify_tg_proxy_type":   config.Notifications.Telegram.ProxyType,
-			"notify_tg_proxy_url":    config.Notifications.Telegram.ProxyURL,
-			"notify_tg_proxy_ip":     config.Notifications.Telegram.ProxyIP,
-			"notify_tg_proxy_port":   config.Notifications.Telegram.ProxyPort,
-			"notify_tg_proxy_user":   config.Notifications.Telegram.ProxyUser,
-			"notify_wh_enabled":      strconv.FormatBool(config.Notifications.Webhook.Enabled),
-			"notify_wh_url":          config.Notifications.Webhook.URL,
-			"notify_wh_method":       config.Notifications.Webhook.Method,
-			"notify_wh_request_type": config.Notifications.Webhook.Type,
-			"notify_wh_body":         config.Notifications.Webhook.Body,
-			"notify_wh_provider":     config.Notifications.Webhook.Provider,
+			"traffic_threshold":           strconv.Itoa(config.TrafficThreshold),
+			"enable_schedule_email":       strconv.FormatBool(config.EnableScheduleMail),
+			"shutdown_mode":               config.ShutdownMode,
+			"threshold_action":            config.ThresholdAction,
+			"keep_alive":                  strconv.FormatBool(config.KeepAlive),
+			"api_interval":                strconv.Itoa(config.APIInterval),
+			"enable_billing":              strconv.FormatBool(config.EnableBilling),
+			"timezone":                    config.Timezone,
+			"notify_email_enabled":        strconv.FormatBool(config.Notifications.Email.Enabled),
+			"notify_email":                config.Notifications.Email.To,
+			"notify_host":                 config.Notifications.Email.Host,
+			"notify_port":                 strconv.Itoa(config.Notifications.Email.Port),
+			"notify_username":             config.Notifications.Email.Username,
+			"notify_secure":               config.Notifications.Email.Security,
+			"notify_tg_enabled":           strconv.FormatBool(config.Notifications.Telegram.Enabled),
+			"notify_tg_chat_id":           config.Notifications.Telegram.ChatID,
+			"notify_tg_daily_report":      strconv.FormatBool(config.Notifications.Telegram.DailyReport),
+			"notify_tg_daily_report_time": normalizeClock(config.Notifications.Telegram.DailyReportTime, "00:00"),
+			"notify_tg_proxy_type":        config.Notifications.Telegram.ProxyType,
+			"notify_tg_proxy_url":         config.Notifications.Telegram.ProxyURL,
+			"notify_tg_proxy_ip":          config.Notifications.Telegram.ProxyIP,
+			"notify_tg_proxy_port":        config.Notifications.Telegram.ProxyPort,
+			"notify_tg_proxy_user":        config.Notifications.Telegram.ProxyUser,
+			"notify_wh_enabled":           strconv.FormatBool(config.Notifications.Webhook.Enabled),
+			"notify_wh_url":               config.Notifications.Webhook.URL,
+			"notify_wh_method":            config.Notifications.Webhook.Method,
+			"notify_wh_request_type":      config.Notifications.Webhook.Type,
+			"notify_wh_body":              config.Notifications.Webhook.Body,
+			"notify_wh_provider":          config.Notifications.Webhook.Provider,
 		}
 		for key, value := range values {
 			if err := putSettingTx(ctx, tx, key, value); err != nil {

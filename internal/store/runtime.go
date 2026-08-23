@@ -193,7 +193,7 @@ func (s *Store) ClaimJob(ctx context.Context) (domain.Job, error) {
 }
 
 func (s *Store) CompleteJob(ctx context.Context, id, result string) error {
-	_, err := s.db.ExecContext(ctx, `UPDATE jobs SET status='completed',result=?,error='',unique_key=CASE WHEN type='monitor_account' THEN unique_key ELSE NULL END,updated_at=unixepoch() WHERE id=?`, result, id)
+	_, err := s.db.ExecContext(ctx, `UPDATE jobs SET status='completed',result=?,error='',unique_key=CASE WHEN type IN ('monitor_account','daily_report') THEN unique_key ELSE NULL END,updated_at=unixepoch() WHERE id=?`, result, id)
 	return err
 }
 
@@ -205,7 +205,7 @@ func (s *Store) FailJob(ctx context.Context, job domain.Job, jobErr error) error
 		delay := time.Duration(1<<min(job.Attempts, 6)) * time.Second
 		available = available.Add(delay)
 	}
-	_, err := s.db.ExecContext(ctx, `UPDATE jobs SET status=?,error=?,available_at=?,unique_key=CASE WHEN ?='failed' THEN NULL ELSE unique_key END,updated_at=unixepoch() WHERE id=?`, status, jobErr.Error(), available.Unix(), status, job.ID)
+	_, err := s.db.ExecContext(ctx, `UPDATE jobs SET status=?,error=?,available_at=?,unique_key=CASE WHEN ?='failed' AND type!='daily_report' THEN NULL ELSE unique_key END,updated_at=unixepoch() WHERE id=?`, status, jobErr.Error(), available.Unix(), status, job.ID)
 	return err
 }
 

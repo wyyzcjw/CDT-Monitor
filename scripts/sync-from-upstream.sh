@@ -114,10 +114,8 @@ else
   die "找不到分支 ${BRANCH}"
 fi
 
-BEFORE="$(git rev-parse HEAD)"
 if git merge-base --is-ancestor "$UPSTREAM_REF" HEAD; then
   log "${BRANCH} 已基于最新 ${UPSTREAM_REF}"
-  REBASED=0
 else
   log "rebase ${BRANCH} onto ${UPSTREAM_REF}"
   if ! git rebase "$UPSTREAM_REF"; then
@@ -137,10 +135,7 @@ rebase 出现冲突。处理完后：
 EOF
     exit 1
   fi
-  REBASED=1
 fi
-
-AFTER="$(git rev-parse HEAD)"
 
 log "同步 MOD 版本 ${MOD_VERSION}"
 if [[ -f docker-compose.yml ]]; then
@@ -158,7 +153,7 @@ if ! git diff --quiet -- docker-compose.yml; then
   git commit -m "chore: set mod version ${MOD_VERSION}"
 fi
 
-if [[ "$VERIFY" -eq 1 && ( "$REBASED" -eq 1 || "$BEFORE" != "$AFTER" ) ]]; then
+if [[ "$VERIFY" -eq 1 ]]; then
   command -v go >/dev/null || die "找不到 go，请先安装 Go"
   command -v npm >/dev/null || die "找不到 npm，请先安装 Node.js"
   log "go test ./..."
@@ -173,10 +168,10 @@ if [[ "$VERIFY" -eq 1 && ( "$REBASED" -eq 1 || "$BEFORE" != "$AFTER" ) ]]; then
   if [[ -n "$(git status --porcelain --untracked-files=no -- internal/web/dist)" ]]; then
     log "提交重建后的前端 dist"
     git add internal/web/dist
-    git commit -m "chore: rebuild web dist after upstream rebase"
+    git commit -m "chore: rebuild web dist"
   fi
-elif [[ "$VERIFY" -eq 1 ]]; then
-  log "上游无新提交，版本已同步；跳过测试和构建"
+else
+  log "已跳过测试和构建"
 fi
 
 if [[ "$PUSH" -eq 1 ]]; then

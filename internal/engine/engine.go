@@ -26,6 +26,7 @@ const (
 	JobRefreshAccount  = "refresh_account"
 	JobControlInstance = "control_instance"
 	JobTestNotify      = "test_notification"
+	JobDailyReport     = "daily_report"
 )
 
 type Engine struct {
@@ -93,7 +94,11 @@ func (e *Engine) RunOnce(ctx context.Context) error {
 	if !acquired {
 		return ErrMonitorBusy
 	}
-	return e.enqueueMonitorCycle(ctx, time.Now())
+	now := time.Now()
+	if err = e.enqueueMonitorCycle(ctx, now); err != nil {
+		return err
+	}
+	return e.enqueueDailyReportIfDue(ctx, now)
 }
 
 func (e *Engine) scheduler(ctx context.Context) {
@@ -128,6 +133,61 @@ func (e *Engine) enqueueMonitorCycle(ctx context.Context, now time.Time) error {
 		}
 	}
 	return e.store.SetLastMonitorRun(ctx, now.UTC())
+}
+
+// enqueueDailyReportIfDue schedules at most one Telegram traffic report per local day.
+// If the service starts after the configured send time, the current day's report
+// is queued immediately; the unique job key prevents duplicate automatic reports.
+func (e *Engine) enqueueDailyReportIfDue(ctx context.Context, now time.Time) error {
+	config, err := e.store.GetConfig(ctx)
+	if err != nil {
+		return err
+	}
+	tg := config.Notifications.Telegram
+	if !tg.Enabled || !tg.DailyReport || strings.TrimSpace(tg.Token) == "" || strings.TrimSpace(tg.ChatID) == "" {
+		return nil
+	}
+
+	location, err := time.LoadLocation(config.Timezone)
+	if err != nil {
+		location = time.FixedZone("CST", 8*3600)
+	}
+	localNow := now.In(location)
+	hour, minute := dailyReportClock(tg.DailyReportTime)
+	scheduled := time.Date(localNow.Year(), localNow.Month(), localNow.Day(), hour, minute, 0, 0, location)
+	if localNow.Before(scheduled) {
+		return nil
+	}
+
+	day := localNow.Format("20060102")
+	payload, err := json.Marshal(map[string]string{"day": day})
+	if err != nil {
+		return err
+	}
+	_, err = e.Enqueue(ctx, JobDailyReport, 0, string(payload), "daily_report:"+day)
+	return err
+}
+
+func dailyReportClock(value string) (int, int) {
+	hour, minute, ok := parseClock(value)
+	if !ok {
+		return 0, 0
+	}
+	return hour, minute
+}
+
+func parseClock(value string) (hour, minute int, ok bool) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return 0, 0, false
+	}
+	for _, layout := range []string{"15:04", "15:04:05"} {
+		parsed, err := time.Parse(layout, value)
+		if err == nil {
+			return parsed.Hour(), parsed.Minute(), true
+		}
+	}
+	return 0, 0, false
 }
 
 func (e *Engine) worker(ctx context.Context, index int) {
@@ -190,9 +250,116 @@ func (e *Engine) runJob(ctx context.Context, job domain.Job) (string, error) {
 		}
 		event := newEvent("test", "通知通道测试", "CDT Monitor 的通知配置工作正常。", 0, map[string]string{"发送时间": time.Now().Format("2006-01-02 15:04:05")})
 		return "notification sent", e.notify.Send(ctx, payload.Channel, event, config)
+	case JobDailyReport:
+		return e.sendDailyReport(ctx, job)
 	default:
 		return "", fmt.Errorf("unknown job type %q", job.Type)
 	}
+}
+
+func (e *Engine) sendDailyReport(ctx context.Context, job domain.Job) (string, error) {
+	config, err := e.store.GetConfig(ctx)
+	if err != nil {
+		return "", err
+	}
+	tg := config.Notifications.Telegram
+	if !tg.Enabled || strings.TrimSpace(tg.Token) == "" || strings.TrimSpace(tg.ChatID) == "" {
+		return "daily report skipped: telegram disabled", nil
+	}
+
+	accounts, err := e.store.ListAccounts(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	location, err := time.LoadLocation(config.Timezone)
+	if err != nil {
+		location = time.FixedZone("CST", 8*3600)
+	}
+	now := time.Now().In(location)
+
+	var body strings.Builder
+	fmt.Fprintf(&body, "🕛 %s · %s\n", now.Format("2006-01-02 15:04"), config.Timezone)
+	body.WriteString("━━━━━━━━━━━━━━━━\n")
+
+	var totalUsed, totalLimit float64
+	running := 0
+	for _, account := range accounts {
+		name := strings.TrimSpace(account.Remark)
+		if name == "" {
+			name = masked(account.AccessKeyID)
+		}
+
+		statusIcon := "⚪"
+		switch account.InstanceStatus {
+		case domain.StatusRunning:
+			statusIcon = "🟢"
+			running++
+		case domain.StatusStarting, domain.StatusStopping:
+			statusIcon = "🟡"
+		case domain.StatusStopped:
+			statusIcon = "🔴"
+		}
+
+		percent := usagePercent(account.TrafficUsed, account.MaxTraffic)
+		filled := int(math.Round(math.Max(0, math.Min(100, percent)) / 10))
+		bar := strings.Repeat("█", filled) + strings.Repeat("░", 10-filled)
+
+		fmt.Fprintf(&body, "%s %s\n", statusIcon, name)
+		fmt.Fprintf(&body, "  📡 流量: %.2f GB / %.2f GB\n", account.TrafficUsed, account.MaxTraffic)
+		fmt.Fprintf(&body, "  [%s] %.1f%% · 阈值 %d%%\n", bar, percent, config.TrafficThreshold)
+		fmt.Fprintf(&body, "  🖥 状态: %s · 地域: %s\n", account.InstanceStatus, account.RegionID)
+
+		if config.EnableBilling {
+			var balance aliyun.BillingBalance
+			var bill aliyun.BillingBill
+			balanceOK, _ := e.store.BillingCache(ctx, account.ID, "balance", "", 12*time.Hour, &balance)
+			billOK, _ := e.store.BillingCache(ctx, account.ID, "instance_bill", now.Format("2006-01"), 12*time.Hour, &bill)
+			if balanceOK || billOK {
+				currency := strings.TrimSpace(balance.Currency)
+				if currency == "" {
+					currency = "USD"
+				}
+				body.WriteString("  💰")
+				if balanceOK {
+					fmt.Fprintf(&body, " 余额: %s %.2f", currency, balance.Amount)
+				}
+				if billOK {
+					fmt.Fprintf(&body, " · 本月费用: %s %.2f", currency, bill.TotalCost)
+				}
+				body.WriteByte('\n')
+			}
+		}
+
+		body.WriteString("━━━━━━━━━━━━━━━━\n")
+		totalUsed += account.TrafficUsed
+		totalLimit += account.MaxTraffic
+	}
+
+	if len(accounts) == 0 {
+		body.WriteString("暂无账号数据\n━━━━━━━━━━━━━━━━\n")
+	}
+	fmt.Fprintf(&body, "📌 合计: %.2f GB / %.2f GB · 运行 %d/%d", totalUsed, totalLimit, running, len(accounts))
+
+	event := newEvent(
+		"daily_report",
+		"📊 每日流量汇报",
+		body.String(),
+		0,
+		map[string]string{},
+	)
+	var payload struct {
+		Day string `json:"day"`
+	}
+	_ = json.Unmarshal([]byte(job.Payload), &payload)
+	if day := strings.TrimSpace(payload.Day); len(day) == 8 {
+		event.ID = "daily_report:" + day
+	}
+	if err := e.store.AddOutbox(ctx, event, []string{"telegram"}); err != nil {
+		return "", err
+	}
+	_ = e.store.AddLog(ctx, "info", fmt.Sprintf("每日流量汇报已入队，共 %d 个账号", len(accounts)))
+	return fmt.Sprintf("daily report queued for %d accounts", len(accounts)), nil
 }
 
 func (e *Engine) processAccount(ctx context.Context, accountID int64, force bool) (string, error) {
@@ -508,11 +675,11 @@ func (e *Engine) signal() {
 }
 
 func dueWithin(now time.Time, hhmm string, window time.Duration) bool {
-	parsed, err := time.Parse("15:04", hhmm)
-	if err != nil {
+	hour, minute, ok := parseClock(hhmm)
+	if !ok {
 		return false
 	}
-	target := time.Date(now.Year(), now.Month(), now.Day(), parsed.Hour(), parsed.Minute(), 0, 0, now.Location())
+	target := time.Date(now.Year(), now.Month(), now.Day(), hour, minute, 0, 0, now.Location())
 	delta := now.Sub(target)
 	return delta >= 0 && delta <= window
 }
@@ -594,7 +761,7 @@ func RegionName(region string) string {
 		"cn-hongkong": "中国香港", "ap-southeast-1": "新加坡", "us-west-1": "美国（硅谷）", "us-east-1": "美国（弗吉尼亚）",
 		"cn-hangzhou": "华东 1（杭州）", "cn-shanghai": "华东 2（上海）", "cn-qingdao": "华北 1（青岛）", "cn-beijing": "华北 2（北京）",
 		"cn-zhangjiakou": "华北 3（张家口）", "cn-huhehaote": "华北 5（呼和浩特）", "cn-wulanchabu": "华北 6（乌兰察布）",
-		"cn-shenzhen": "华南 1（深圳）", "cn-heyuan": "华南 2（河源）", "cn-guangzhou": "华南 3（广州）", "cn-chengdu": "西南 1（成都）", "ap-northeast-1": "日本（东京）",
+		"cn-shenzhen": "华南 1（深圳）", "cn-heyuan": "华南 2（河源）", "cn-guangzhou": "华南 3（广州）", "cn-chengdu": "西南 1（成都）", "ap-northeast-1": "日本（东京）", "ap-northeast-2": "韩国（首尔）",
 	}
 	if name := names[region]; name != "" {
 		return name

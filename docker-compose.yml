@@ -1,24 +1,22 @@
 services:
   cdt-monitor:
-    image: ghcr.io/wang4386/cdt-monitor:latest
+    build: .
+    image: cdt-monitor:telegram-daily-report
     container_name: cdt-monitor
     restart: unless-stopped
     init: true
     ports:
-      - "43210:8080"
+      - "127.0.0.1:43210:8080"
     environment:
       CDT_DATA_DIR: /data
       CDT_LISTEN: :8080
       CDT_WORKERS: 4
       TZ: Asia/Shanghai
     volumes:
-      - cdt-data:/data
+      - ./data:/data
     healthcheck:
       test: ["CMD", "/cdt-monitor", "healthcheck"]
       interval: 30s
       timeout: 5s
       retries: 3
       start_period: 10s
-
-volumes:
-  cdt-data:

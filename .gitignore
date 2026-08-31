@@ -28,3 +28,6 @@ android-widget/local.properties
 android-widget/**/build/
 *.jks
 *.keystore
+
+compose.yml.bak
+data/

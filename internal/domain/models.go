@@ -50,6 +50,8 @@ type TelegramConfig struct {
 	Token           string `json:"token,omitempty"`
 	TokenConfigured bool   `json:"token_configured"`
 	ChatID          string `json:"chat_id"`
+	DailyReport     bool   `json:"daily_report"`
+	DailyReportTime string `json:"daily_report_time"`
 	ProxyType       string `json:"proxy_type"`
 	ProxyURL        string `json:"proxy_url"`
 	ProxyIP         string `json:"proxy_ip"`

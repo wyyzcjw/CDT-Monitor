@@ -14,6 +14,27 @@ func TestDueWithinSupportsLateScheduler(t *testing.T) {
 	if dueWithin(now, "07:50", 10*time.Minute) {
 		t.Fatal("must not compensate outside the window")
 	}
+	if !dueWithin(now, "08:00:00", 10*time.Minute) {
+		t.Fatal("expected HH:MM:SS clock values to parse")
+	}
+}
+
+func TestParseClock(t *testing.T) {
+	hour, minute, ok := parseClock("08:30")
+	if !ok || hour != 8 || minute != 30 {
+		t.Fatalf("08:30 => %d:%02d ok=%v", hour, minute, ok)
+	}
+	hour, minute, ok = parseClock("22:00:00")
+	if !ok || hour != 22 || minute != 0 {
+		t.Fatalf("22:00:00 => %d:%02d ok=%v", hour, minute, ok)
+	}
+	if _, _, ok = parseClock("25:00"); ok {
+		t.Fatal("invalid clock must not parse")
+	}
+	hour, minute = dailyReportClock("")
+	if hour != 0 || minute != 0 {
+		t.Fatalf("empty clock should fall back to midnight, got %d:%02d", hour, minute)
+	}
 }
 
 func TestInTimeRangeAcrossMidnight(t *testing.T) {
@@ -31,5 +52,11 @@ func TestUsagePercent(t *testing.T) {
 	}
 	if value := usagePercent(1, 0); value != 0 {
 		t.Fatalf("zero quota got %v", value)
+	}
+}
+
+func TestRegionNameIncludesSeoul(t *testing.T) {
+	if name := RegionName("ap-northeast-2"); name != "韩国（首尔）" {
+		t.Fatalf("got %q", name)
 	}
 }

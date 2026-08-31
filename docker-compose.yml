@@ -1,7 +1,10 @@
 services:
   cdt-monitor:
-    build: .
-    image: cdt-monitor:telegram-daily-report
+    build:
+      context: .
+      args:
+        VERSION: "v2.0.5-mod"
+    image: cdt-monitor:v2.0.5-mod
     container_name: cdt-monitor
     restart: unless-stopped
     init: true

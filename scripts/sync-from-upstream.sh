@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Rebase feature/telegram-daily-report onto wang4386/CDT-Monitor main,
-# then verify and push. Safe to re-run.
+# keep the fork version aligned as <upstream-tag>-mod, verify, then push.
+# Safe to re-run.
 #
 #   ./scripts/sync-from-upstream.sh
 #   ./scripts/sync-from-upstream.sh --no-push
@@ -25,13 +26,13 @@ usage() {
   cat <<EOF
 用法: $(basename "$0") [选项]
 
-把 ${BRANCH} rebase 到 ${UPSTREAM_REMOTE}/${UPSTREAM_BRANCH}，跑测试和前端构建，再推回 origin。
+把 ${BRANCH} rebase 到 ${UPSTREAM_REMOTE}/${UPSTREAM_BRANCH}，自动同步 <上游版本>-mod，跑测试和前端构建，再推回 origin。
 
 选项:
-  --no-push       rebase / 验证后不推送
+  --no-push       rebase / 版本同步 / 验证后不推送
   --skip-verify   跳过 go test 和 npm build
   --sync-main     同时快进 origin/main 到上游 main
-  --dry-run       只 fetch 并显示上游新提交，不改本地分支
+  --dry-run       只 fetch 并显示上游新提交和目标 mod 版本，不改本地分支
   -h, --help      显示帮助
 EOF
 }
@@ -70,6 +71,13 @@ git fetch "$ORIGIN_REMOTE"
 UPSTREAM_REF="${UPSTREAM_REMOTE}/${UPSTREAM_BRANCH}"
 git rev-parse --verify "$UPSTREAM_REF" >/dev/null 2>&1 || die "找不到 ${UPSTREAM_REF}"
 
+UPSTREAM_VERSION="$(git describe --tags --abbrev=0 --match 'v[0-9]*' "$UPSTREAM_REF" 2>/dev/null || true)"
+if [[ -n "$UPSTREAM_VERSION" ]]; then
+  MOD_VERSION="${UPSTREAM_VERSION}-mod"
+else
+  MOD_VERSION="dev-mod"
+fi
+
 if [[ "$DRY_RUN" -eq 1 ]]; then
   log "上游新提交 (${UPSTREAM_REF} 有、当前 HEAD 没有)"
   if git merge-base --is-ancestor "$UPSTREAM_REF" HEAD; then
@@ -77,12 +85,21 @@ if [[ "$DRY_RUN" -eq 1 ]]; then
   else
     git log --oneline HEAD.."$UPSTREAM_REF"
   fi
+  echo
+  echo "上游版本: ${UPSTREAM_VERSION:-未找到 tag}"
+  echo "目标版本: ${MOD_VERSION}"
   exit 0
 fi
 
 if [[ "$SYNC_MAIN" -eq 1 ]]; then
   log "快进 ${ORIGIN_REMOTE}/main"
-  git checkout main
+  if git show-ref --verify --quiet "refs/heads/main"; then
+    git checkout main
+  elif git show-ref --verify --quiet "refs/remotes/${ORIGIN_REMOTE}/main"; then
+    git checkout -b main --track "${ORIGIN_REMOTE}/main"
+  else
+    git checkout -b main "$UPSTREAM_REF"
+  fi
   git merge --ff-only "$UPSTREAM_REF"
   if [[ "$PUSH" -eq 1 ]]; then
     git push "$ORIGIN_REMOTE" main
@@ -110,8 +127,11 @@ rebase 出现冲突。处理完后：
 
   git add <文件>
   git rebase --continue
-  $0 --no-push          # 可选：再跑验证
+  $0 --no-push          # 可选：再跑版本同步和验证
   git push --force-with-lease ${ORIGIN_REMOTE} ${BRANCH}
+
+如果冲突仅位于 internal/web/dist，优先从 web 源码重新 npm run build，
+不要手工合并带 hash 的压缩 JS 构建产物。
 
 放弃这次 rebase： git rebase --abort
 EOF
@@ -121,6 +141,22 @@ EOF
 fi
 
 AFTER="$(git rev-parse HEAD)"
+
+log "同步 MOD 版本 ${MOD_VERSION}"
+if [[ -f docker-compose.yml ]]; then
+  sed -i.bak -E \
+    -e "s/(VERSION:[[:space:]]*\").*(\")/\\1${MOD_VERSION}\\2/" \
+    -e "s|(image:[[:space:]]*cdt-monitor:).*|\\1${MOD_VERSION}|" \
+    docker-compose.yml
+  rm -f docker-compose.yml.bak
+else
+  die "找不到 docker-compose.yml"
+fi
+
+if ! git diff --quiet -- docker-compose.yml; then
+  git add docker-compose.yml
+  git commit -m "chore: set mod version ${MOD_VERSION}"
+fi
 
 if [[ "$VERIFY" -eq 1 && ( "$REBASED" -eq 1 || "$BEFORE" != "$AFTER" ) ]]; then
   command -v go >/dev/null || die "找不到 go，请先安装 Go"
@@ -140,7 +176,7 @@ if [[ "$VERIFY" -eq 1 && ( "$REBASED" -eq 1 || "$BEFORE" != "$AFTER" ) ]]; then
     git commit -m "chore: rebuild web dist after upstream rebase"
   fi
 elif [[ "$VERIFY" -eq 1 ]]; then
-  log "上游无新提交，跳过测试和构建"
+  log "上游无新提交，版本已同步；跳过测试和构建"
 fi
 
 if [[ "$PUSH" -eq 1 ]]; then
@@ -151,6 +187,7 @@ else
 fi
 
 log "完成"
+echo "MOD 版本: ${MOD_VERSION}"
 git log --oneline --decorate -5
 echo
 git status -sb

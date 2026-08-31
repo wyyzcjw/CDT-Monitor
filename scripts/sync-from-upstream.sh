@@ -26,11 +26,12 @@ usage() {
   cat <<EOF
 用法: $(basename "$0") [选项]
 
-把 ${BRANCH} rebase 到 ${UPSTREAM_REMOTE}/${UPSTREAM_BRANCH}，自动同步 <上游版本>-mod，跑测试和前端构建，再推回 origin。
+把 ${BRANCH} rebase 到 ${UPSTREAM_REMOTE}/${UPSTREAM_BRANCH}，自动同步 <上游版本>-mod，验证构建，再推回 origin。
+开发机有 Go/npm 时执行本机测试和构建；服务器未安装 Go/npm 时自动使用 Docker 完整构建验证。
 
 选项:
   --no-push       rebase / 版本同步 / 验证后不推送
-  --skip-verify   跳过 go test 和 npm build
+  --skip-verify   跳过构建验证
   --sync-main     同时快进 origin/main 到上游 main
   --dry-run       只 fetch 并显示上游新提交和目标 mod 版本，不改本地分支
   -h, --help      显示帮助
@@ -176,24 +177,35 @@ if ! git diff --quiet -- docker-compose.yml; then
 fi
 
 if [[ "$VERIFY" -eq 1 ]]; then
-  command -v go >/dev/null || die "找不到 go，请先安装 Go"
-  command -v npm >/dev/null || die "找不到 npm，请先安装 Node.js"
-  log "go test ./..."
-  go test ./...
-  log "go build"
-  go build -o /dev/null ./cmd/cdt-monitor
-  log "web build"
-  if [[ ! -d web/node_modules ]]; then
-    (cd web && npm ci --ignore-scripts)
-  fi
-  (cd web && npm run build)
-  if [[ -n "$(git status --porcelain --untracked-files=no -- internal/web/dist)" ]]; then
-    log "提交重建后的前端 dist"
-    git add internal/web/dist
-    git commit -m "chore: rebuild web dist"
+  if command -v go >/dev/null 2>&1 && command -v npm >/dev/null 2>&1; then
+    log "使用本机 Go/npm 验证"
+    log "go test ./..."
+    go test ./...
+    log "go build"
+    go build -o /dev/null ./cmd/cdt-monitor
+    log "web build"
+    if [[ ! -d web/node_modules ]]; then
+      (cd web && npm ci --ignore-scripts)
+    fi
+    (cd web && npm run build)
+    if [[ -n "$(git status --porcelain --untracked-files=no -- internal/web/dist)" ]]; then
+      log "提交重建后的前端 dist"
+      git add internal/web/dist
+      git commit -m "chore: rebuild web dist"
+    fi
+  elif command -v docker >/dev/null 2>&1; then
+    log "本机未安装 Go/npm，改用 Docker 完整构建验证"
+    if docker compose version >/dev/null 2>&1; then
+      docker compose build cdt-monitor
+    else
+      docker build --build-arg VERSION="$MOD_VERSION" -t "cdt-monitor:${MOD_VERSION}" .
+    fi
+    log "Docker 构建验证通过"
+  else
+    die "找不到 Go/npm，也找不到 Docker；可安装开发环境或使用 --skip-verify"
   fi
 else
-  log "已跳过测试和构建"
+  log "已跳过构建验证"
 fi
 
 if [[ "$PUSH" -eq 1 ]]; then

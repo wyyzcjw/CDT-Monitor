@@ -8,10 +8,31 @@ export class APIError extends Error {
   }
 }
 
+let lastKnownVersion = ''
+
 function cookie(name: string) {
   const prefix = `${name}=`
   const value = document.cookie.split('; ').find((part) => part.startsWith(prefix))
   return value ? decodeURIComponent(value.slice(prefix.length)) : ''
+}
+
+export function normalizeLatestForMod(currentVersion: string, upstreamLatest: string) {
+  const current = currentVersion.trim()
+  const latest = upstreamLatest.trim()
+  const match = current.match(/^(v?\d+\.\d+\.\d+)-mod(?:\.\d+)?$/)
+  if (!match || !latest) return latest
+  if (latest === match[1]) return current
+  return /-mod(?:\.\d+)?$/.test(latest) ? latest : `${latest}-mod`
+}
+
+function normalizeSystemInfo(path: string, body: unknown) {
+  if (!path.startsWith('/api/v1/system/info') || !body || typeof body !== 'object') return body
+  const info = body as { version?: unknown; latest_version?: unknown }
+  if (typeof info.version === 'string') lastKnownVersion = info.version
+  if (typeof info.latest_version === 'string' && lastKnownVersion) {
+    info.latest_version = normalizeLatestForMod(lastKnownVersion, info.latest_version)
+  }
+  return body
 }
 
 export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
@@ -28,7 +49,7 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
     const detail = body?.error
     throw new APIError(response.status, detail?.code ?? 'request_failed', detail?.message ?? `HTTP ${response.status}`)
   }
-  return body as T
+  return normalizeSystemInfo(path, body) as T
 }
 
 export async function fetchLatestReleaseFromGitHub() {
@@ -44,7 +65,7 @@ export async function fetchLatestReleaseFromGitHub() {
     const payload = await response.json().catch(() => null) as { tag_name?: unknown } | null
     if (!response.ok) throw new Error(`GitHub API 请求失败（HTTP ${response.status}）`)
     if (!payload || typeof payload.tag_name !== 'string' || !payload.tag_name.trim()) throw new Error('GitHub Release 响应无版本号')
-    return payload.tag_name
+    return normalizeLatestForMod(lastKnownVersion, payload.tag_name)
   } finally {
     window.clearTimeout(timeout)
   }

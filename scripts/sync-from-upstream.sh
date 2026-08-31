@@ -40,6 +40,28 @@ EOF
 log() { printf '\n==> %s\n' "$*"; }
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 
+latest_upstream_version() {
+  git ls-remote --tags --refs "$UPSTREAM_REMOTE" 'v[0-9]*' 2>/dev/null | awk '
+    {
+      ref = $2
+      sub(/^refs\/tags\/v/, "", ref)
+      n = split(ref, p, ".")
+      if (n != 3 || p[1] !~ /^[0-9]+$/ || p[2] !~ /^[0-9]+$/ || p[3] !~ /^[0-9]+$/) next
+      major = p[1] + 0
+      minor = p[2] + 0
+      patch = p[3] + 0
+      if (!found || major > best_major || (major == best_major && minor > best_minor) || (major == best_major && minor == best_minor && patch > best_patch)) {
+        found = 1
+        best_major = major
+        best_minor = minor
+        best_patch = patch
+        best = "v" ref
+      }
+    }
+    END { if (found) print best }
+  '
+}
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --no-push) PUSH=0 ;;
@@ -71,7 +93,7 @@ git fetch "$ORIGIN_REMOTE"
 UPSTREAM_REF="${UPSTREAM_REMOTE}/${UPSTREAM_BRANCH}"
 git rev-parse --verify "$UPSTREAM_REF" >/dev/null 2>&1 || die "找不到 ${UPSTREAM_REF}"
 
-UPSTREAM_VERSION="$(git describe --tags --abbrev=0 --match 'v[0-9]*' "$UPSTREAM_REF" 2>/dev/null || true)"
+UPSTREAM_VERSION="$(latest_upstream_version)"
 if [[ -n "$UPSTREAM_VERSION" ]]; then
   MOD_VERSION="${UPSTREAM_VERSION}-mod"
 else

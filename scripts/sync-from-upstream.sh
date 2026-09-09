@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Keep the fork main branch as a pure fast-forward mirror of wang4386/CDT-Monitor main,
-# then rebase feature/telegram-daily-report onto the latest upstream, verify, and push.
+# then rebase mod onto the latest upstream, verify, and push.
 # Safe to re-run. main is never force-pushed by this script.
 #
 #   ./scripts/sync-from-upstream.sh
@@ -11,7 +11,7 @@ set -euo pipefail
 
 export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
 
-BRANCH="${BRANCH:-feature/telegram-daily-report}"
+BRANCH="${BRANCH:-mod}"
 UPSTREAM_REMOTE="${UPSTREAM_REMOTE:-upstream}"
 UPSTREAM_URL="${UPSTREAM_URL:-https://github.com/wang4386/CDT-Monitor.git}"
 UPSTREAM_BRANCH="${UPSTREAM_BRANCH:-main}"
@@ -26,6 +26,9 @@ DRY_RUN=0
 usage() {
   cat <<EOF_USAGE
 用法: $(basename "$0") [选项]
+
+功能分支已由 feature/telegram-daily-report 更名为 mod，默认同步 mod。
+如有通过 BRANCH 环境变量指定旧分支的命令或定时任务，请同步改为 BRANCH=mod。
 
 默认执行完整同步：
   1. fetch upstream/origin；

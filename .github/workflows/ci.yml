@@ -3,7 +3,7 @@ name: CI
 on:
   pull_request:
   push:
-    branches: [dev, main, feature/telegram-daily-report]
+    branches: [dev, main, mod]
 
 permissions:
   contents: read

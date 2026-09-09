@@ -5,7 +5,7 @@ import {
   Activity, AlertTriangle, ArrowLeft, ArrowRight, Bell, Check, ChevronDown, ChevronRight, CircleDollarSign,
   Clock3, Cloud, Copy, Database, ExternalLink, Eye, EyeOff, FileClock, Fingerprint, Gauge,
   Globe2, History as HistoryIcon, Info, KeyRound, LoaderCircle, LockKeyhole, LogOut,
-  Mail, Menu, MoreHorizontal, CalendarClock, Plus, Power, RefreshCw, Save, Search, Server, Settings, ShieldCheck,
+  Mail, Menu, Moon, Sun, MoreHorizontal, CalendarClock, Plus, Power, RefreshCw, Save, Search, Server, Settings, ShieldCheck,
   Trash2, UserCog, Webhook, X, Zap,
 } from 'lucide-react'
 import { APIError, api, fetchLatestReleaseFromGitHub, waitForJob } from './api'
@@ -329,6 +329,7 @@ function Dashboard({ status, config, onRefresh, onSettings, onAdmin, onHistory, 
         <div className="brand-lockup"><BrandMark /><div><b>CDT MONITOR</b><span>CONTROL PLANE</span></div></div>
         <div id="dashboard-actions" className={`topbar-actions ${mobileMenu ? 'open' : ''}`} aria-busy={refreshingAll}>
           <div className={`heartbeat ${heartbeatAge > 180 ? 'heartbeat--warn' : ''}`}><i />{heartbeatAge > 180 ? '监控任务延迟' : '自动化运行中'}</div>
+          <ThemeToggle />
           <IconButton label={refreshingAll ? '正在强制刷新全部实例' : '强制刷新全部实例'} disabled={refreshingAll} onClick={() => void refreshAll()}>{refreshingAll ? <LoaderCircle className="spin" size={18} /> : <RefreshCw size={18} />}</IconButton>
           <IconButton label="设置" onClick={openSettings}><Settings size={18} /></IconButton>
           <IconButton label="管理员" title="管理员设置" onClick={openAdmin}><UserCog size={18} /></IconButton>
@@ -403,9 +404,9 @@ function AccountCard({ account, settings, busy, keepAlive, billingEnabled, onAct
         <div className="progress-track" role="progressbar" aria-label="本月流量使用率" aria-valuenow={account.percentage} aria-valuemin={0} aria-valuemax={100}><i style={{ width: `${Math.max(0, Math.min(100, account.percentage))}%` }} className={account.over_threshold ? 'danger' : account.percentage >= account.threshold * .8 ? 'warning' : ''} /></div>
         <button className="account-sparkline" onClick={onHistory} aria-label="查看历史流量">
           <svg viewBox="0 0 320 58" preserveAspectRatio="none" aria-hidden="true">
-            <defs><linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#2dd4bf" stopOpacity=".28" /><stop offset="100%" stopColor="#2dd4bf" stopOpacity="0" /></linearGradient></defs>
-            <line x1="4" y1="48" x2="316" y2="48" stroke="#344665" strokeDasharray="2 3" />
-            {points.length > 0 && <><polygon points={`${points[0].split(',')[0]},48 ${points.join(' ')} ${points.at(-1)!.split(',')[0]},48`} fill={`url(#${gradientId})`} /><polyline points={points.join(' ')} fill="none" stroke="#2dd4bf" strokeWidth="2" vectorEffect="non-scaling-stroke" /><circle cx={points.at(-1)!.split(',')[0]} cy={points.at(-1)!.split(',')[1]} r="2.5" fill="#2dd4bf" /></>}
+            <defs><linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="var(--brand)" stopOpacity=".28" /><stop offset="100%" stopColor="var(--brand)" stopOpacity="0" /></linearGradient></defs>
+            <line x1="4" y1="48" x2="316" y2="48" stroke="var(--line-strong)" strokeDasharray="2 3" />
+            {points.length > 0 && <><polygon points={`${points[0].split(',')[0]},48 ${points.join(' ')} ${points.at(-1)!.split(',')[0]},48`} fill={`url(#${gradientId})`} /><polyline points={points.join(' ')} fill="none" stroke="var(--brand)" strokeWidth="2" vectorEffect="non-scaling-stroke" /><circle cx={points.at(-1)!.split(',')[0]} cy={points.at(-1)!.split(',')[1]} r="2.5" fill="var(--brand)" /></>}
           </svg>
           {!points.length && <span>{historyError ? '历史流量加载失败，点击重试' : history ? '等待流量样本' : '加载流量趋势…'}</span>}
         </button>
@@ -727,6 +728,18 @@ function HistoryModal({ account, onClose }: { account: AccountSummary; onClose: 
   useEffect(() => { void api<History>(`/api/v1/accounts/${account.id}/history`).then(setHistory) }, [account.id])
   const data = (history?.[range] || []).map((point) => ({ at: new Date(point.at).getTime(), traffic: Math.round(point.traffic * 1000) / 1000 }))
   return <div className="modal-layer" role="dialog" aria-modal="true"><div className="modal-scrim" onClick={onClose} /><section className="chart-modal glass-card"><header><div><p className="eyebrow">TRAFFIC HISTORY</p><h2>{account.remark || account.account}</h2></div><IconButton label="关闭" onClick={onClose}><X /></IconButton></header><Segmented value={range} options={[['hourly', '24 小时'], ['daily', '30 天']]} onChange={(value) => setRange(value as typeof range)} /><div className="chart-area" aria-label="流量历史图表">{!history ? <LoaderCircle className="spin chart-loader" /> : data.length === 0 ? <div className="subtle-empty"><HistoryIcon />等待采样数据</div> : <Suspense fallback={<LoaderCircle className="spin chart-loader" />}><HistoryChart data={data} range={range} /></Suspense>}</div></section></div>
+}
+
+function ThemeToggle() {
+  const [theme, setTheme] = useState(() => document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light')
+  const toggle = () => {
+    const next = theme === 'dark' ? 'light' : 'dark'
+    document.documentElement.dataset.theme = next
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', next === 'dark' ? '#0a0e16' : '#eef2f8')
+    try { localStorage.setItem('cdt-monitor-theme', next) } catch { /* Theme still works when storage is unavailable. */ }
+    setTheme(next)
+  }
+  return <IconButton label={theme === 'dark' ? '切换浅色主题' : '切换深色主题'} onClick={toggle}>{theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}</IconButton>
 }
 
 function BrandMark() { return <span className="brand-mark"><Cloud size={21} /></span> }

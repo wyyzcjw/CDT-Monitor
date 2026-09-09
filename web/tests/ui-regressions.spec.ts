@@ -411,3 +411,35 @@ test('dashboard billing, history precision and settings remain usable', async ({
   expect(adminOverflow).toBeLessThanOrEqual(1)
   await page.screenshot({ path: testInfo.outputPath('admin-settings-mobile.png'), fullPage: true })
 })
+
+test('theme follows system preference and persists a manual selection', async ({ page }, testInfo) => {
+  await page.emulateMedia({ colorScheme: 'dark' })
+  await page.route('**/api/v1/system/init-status', route => route.fulfill({ json: { initialized: true } }))
+  await page.route('**/api/v1/config', route => route.fulfill({ json: config }))
+  await page.route('**/api/v1/status', route => route.fulfill({ json: {
+    accounts: [{ id: 1, account: 'demo', remark: '主题测试实例', region: 'cn-hongkong', region_name: '中国香港', flow_total: 200, flow_used: 12.5, percentage: 6.25, threshold: 95, over_threshold: false, instance_status: 'Running', last_updated: new Date().toISOString(), stale: false }],
+    system_last_run: new Date().toISOString(),
+  } }))
+  await page.route('**/api/v1/accounts/1/history', route => route.fulfill({ json: { hourly: [], daily: [] } }))
+  await page.goto('/')
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
+  await expect(page.locator('.account-card')).toHaveCSS('background-color', 'rgb(16, 23, 37)')
+  await page.screenshot({ path: testInfo.outputPath('theme-dark.png'), fullPage: true })
+  await page.getByRole('button', { name: '设置', exact: true }).click()
+  await expect(page.locator('.settings-panel')).toHaveCSS('background-color', 'rgb(16, 23, 37)')
+  await page.screenshot({ path: testInfo.outputPath('theme-dark-settings.png'), fullPage: true })
+  await page.keyboard.press('Escape')
+  // Reload also checks that the system default is reapplied before rendering.
+  await page.reload()
+  await page.getByRole('button', { name: '切换浅色主题' }).click()
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'light')
+  await expect(page.locator('.account-card')).toHaveCSS('background-color', 'rgb(255, 255, 255)')
+  await page.reload()
+  await expect(page.getByRole('button', { name: '切换深色主题' })).toBeVisible()
+  await page.screenshot({ path: testInfo.outputPath('theme-light.png'), fullPage: true })
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.getByRole('button', { name: '菜单', exact: true }).click()
+  await page.getByRole('button', { name: '切换深色主题' }).click()
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1)
+})

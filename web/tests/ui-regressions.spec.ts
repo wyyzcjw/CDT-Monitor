@@ -250,10 +250,10 @@ test('dashboard billing, history precision and settings remain usable', async ({
 
   await page.setViewportSize({ width: 1440, height: 900 })
   await page.goto('/')
-  const billing = page.locator('.account-billing')
-  await expect(billing.getByText('本月费用')).toBeVisible()
+  const billing = page.locator('.account-card')
+  await expect(billing.getByText('本月账单')).toBeVisible()
   await expect(billing.getByText('¥23.46')).toBeVisible()
-  await expect(billing.getByText('¥123.45')).toBeVisible()
+  await expect(billing.getByText('账户余额 ¥123.45')).toBeVisible()
   await expect(page.locator('.billing-row')).toHaveCount(0)
   await expect(page.locator('.metric--blue .metric-icon')).toBeVisible()
   await expect(page.locator('.metric--green .metric-icon')).toBeVisible()

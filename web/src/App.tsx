@@ -5,7 +5,7 @@ import {
   Activity, AlertTriangle, ArrowLeft, ArrowRight, Bell, Check, ChevronDown, ChevronRight, CircleDollarSign,
   Clock3, Cloud, Copy, Database, ExternalLink, Eye, EyeOff, FileClock, Fingerprint, Gauge,
   Globe2, History as HistoryIcon, Info, KeyRound, LoaderCircle, LockKeyhole, LogOut,
-  Mail, Menu, Play, Plus, Power, RefreshCw, Save, Search, Server, Settings, ShieldCheck,
+  Mail, Menu, MoreHorizontal, CalendarClock, Plus, Power, RefreshCw, Save, Search, Server, Settings, ShieldCheck,
   Trash2, UserCog, Webhook, X, Zap,
 } from 'lucide-react'
 import { APIError, api, fetchLatestReleaseFromGitHub, waitForJob } from './api'
@@ -350,37 +350,70 @@ function Dashboard({ status, config, onRefresh, onSettings, onAdmin, onHistory, 
         <button className="empty-state" onClick={onSettings}><Cloud /><h3>添加第一个云端实例</h3><p>进入设置完成 AccessKey 与实例信息配置</p><span>打开设置<ChevronRight size={16} /></span></button>
       ) : (
         <section className="account-grid">
-          {status.accounts.map((account) => <AccountCard key={account.id} account={account} busy={refreshingAll ? 'refresh' : busy[account.id]} keepAlive={config.keep_alive} billingEnabled={config.enable_billing} onAction={(action) => void runAction(account, action)} onHistory={() => onHistory(account)} />)}
+          {status.accounts.map((account) => <AccountCard key={account.id} account={account} settings={config.accounts.find((item) => item.id === account.id)} busy={refreshingAll ? 'refresh' : busy[account.id]} keepAlive={config.keep_alive} billingEnabled={config.enable_billing} onAction={(action) => void runAction(account, action)} onHistory={() => onHistory(account)} />)}
         </section>
       )}
     </main>
   )
 }
 
-function AccountCard({ account, busy, keepAlive, billingEnabled, onAction, onHistory }: { account: AccountSummary; busy?: string; keepAlive: boolean; billingEnabled: boolean; onAction: (action: 'start' | 'stop' | 'refresh') => void; onHistory: () => void }) {
+function AccountCard({ account, settings, busy, keepAlive, billingEnabled, onAction, onHistory }: { account: AccountSummary; settings?: Account; busy?: string; keepAlive: boolean; billingEnabled: boolean; onAction: (action: 'start' | 'stop' | 'refresh') => void; onHistory: () => void }) {
   const statusTone = statusClass(account.instance_status)
   const currency = account.currency === 'USD' ? '$' : '¥'
-  const hasBilling = account.monthly_cost !== undefined || account.balance !== undefined
+  const [history, setHistory] = useState<History | null>(null)
+  const [historyError, setHistoryError] = useState(false)
+  const gradientId = useId()
+  useEffect(() => {
+    let active = true
+    void api<History>(`/api/v1/accounts/${account.id}/history`).then((value) => {
+      if (active) { setHistory(value); setHistoryError(false) }
+    }).catch(() => { if (active) setHistoryError(true) })
+    return () => { active = false }
+  }, [account.id, account.last_updated])
+  const values = (history?.hourly || []).map((point) => point.traffic).filter(Number.isFinite)
+  const min = Math.min(...values), span = Math.max(Math.max(...values) - min, .01)
+  const points = values.map((value, index) => `${values.length === 1 ? 160 : 4 + index / (values.length - 1) * 312},${48 - (value - min) / span * 38}`)
+  const running = account.instance_status === 'Running'
+  const powerAvailable = running || account.instance_status === 'Stopped'
+  const schedule = settings?.schedule_enabled ? `${settings.start_time} – ${settings.stop_time}` : '已关闭'
   return (
-    <article className={`glass-card account-card ${account.over_threshold ? 'account-card--alert' : ''}`}>
+    <article className={`account-card ${account.over_threshold ? 'account-card--alert' : ''}`}>
       <header className="account-card__header">
-        <div className={`status-icon ${statusTone}`}><Server size={20} /></div>
-        <div className="account-title"><h3>{account.remark || account.account}</h3><span>{account.region_name}</span></div>
-        <div className="account-card__side">
+        <div className="account-title"><h3>{account.remark || account.account}</h3><span>{account.region}{settings?.instance_id ? ` · ${settings.instance_id}` : ` · ${account.region_name}`}</span></div>
+        <div className="account-card__tools">
           <div className={`status-pill ${statusTone}`}><i />{statusLabel(account.instance_status)}</div>
-          {billingEnabled && <div className="account-billing" aria-label="账单与余额"><div><span>本月费用</span><b>{account.monthly_cost === undefined ? '待同步' : `${currency}${account.monthly_cost.toFixed(2)}`}</b></div><div><span>账户余额</span><b>{account.balance === undefined ? '待同步' : `${currency}${account.balance.toFixed(2)}`}</b></div><small className={account.billing_error ? 'billing-error' : ''}>{account.billing_error || (hasBilling ? '已同步' : '待同步')}</small></div>}
+          <button className={`account-power ${running ? '' : 'account-power--start'}`} disabled={!!busy || !powerAvailable || (running && keepAlive)} title={running && keepAlive ? '保活启用，不能关机' : undefined} onClick={() => onAction(running ? 'stop' : 'start')}>
+            {busy === 'start' || busy === 'stop' ? <LoaderCircle className="spin" size={17} /> : <Power size={17} />}{running ? '关机' : '开机'}
+          </button>
+          <details className="account-menu"><summary aria-label="实例更多操作" title="实例更多操作"><MoreHorizontal size={19} /></summary><div className="account-menu__items">
+            <button disabled={!!busy} onClick={(event) => { event.currentTarget.closest('details')?.removeAttribute('open'); onAction('refresh') }}><RefreshCw size={16} className={busy === 'refresh' ? 'spin' : ''} />刷新实例</button>
+            <button onClick={(event) => { event.currentTarget.closest('details')?.removeAttribute('open'); onHistory() }}><HistoryIcon size={16} />查看历史流量</button>
+          </div></details>
         </div>
       </header>
-      <div className="traffic-value"><div><span>本月 CDT 流量</span><strong>{account.flow_used.toFixed(2)}</strong><small> / {account.flow_total.toFixed(0)} GB</small></div><button className="mini-icon" onClick={onHistory} aria-label="查看历史流量"><HistoryIcon size={17} /></button></div>
-      <div className="progress-track"><i style={{ width: `${Math.min(100, account.percentage)}%` }} className={account.over_threshold ? 'danger' : account.percentage >= account.threshold * .8 ? 'warning' : ''} /></div>
-      <div className="progress-meta"><span>{account.percentage.toFixed(2)}% 已使用</span><span>阈值 {account.threshold}%</span></div>
-      <footer className="account-card__footer">
-        <span className={account.stale ? 'stale' : ''}><Clock3 size={14} />{account.last_updated ? formatTime(account.last_updated) : '等待首次同步'}</span>
-        <div className="control-group">
-          <IconButton label="刷新实例" disabled={!!busy} onClick={() => onAction('refresh')}>{busy === 'refresh' ? <LoaderCircle className="spin" /> : <RefreshCw />}</IconButton>
-          {account.instance_status === 'Stopped' && <IconButton label="开机" disabled={!!busy} tone="positive" onClick={() => onAction('start')}>{busy === 'start' ? <LoaderCircle className="spin" /> : <Play />}</IconButton>}
-          {account.instance_status === 'Running' && <IconButton label={keepAlive ? '保活启用，不能关机' : '关机'} disabled={!!busy || keepAlive} tone="danger" onClick={() => onAction('stop')}>{busy === 'stop' ? <LoaderCircle className="spin" /> : <Power />}</IconButton>}
+      <div className="account-card__body">
+        <div className="account-metrics">
+          <div><span>每月额度</span><b>{account.flow_total.toFixed(0)} GB</b></div>
+          <div><span>CDT 流量</span><b>{account.flow_used.toFixed(2)} GB</b></div>
+          <div><span>流量阈值</span><b>{(account.flow_total * account.threshold / 100).toFixed(2)} GB</b></div>
+          <div title={account.billing_error}><span>本月账单</span><b>{!billingEnabled ? '已关闭' : account.monthly_cost === undefined ? '待同步' : `${currency}${account.monthly_cost.toFixed(2)}`}</b></div>
+          <div><span>每日计划</span><b>{schedule}</b></div>
         </div>
+        <div className="account-traffic-row"><span>本月流量使用率</span><strong>{account.percentage.toFixed(2)}%</strong></div>
+        <div className="progress-track" role="progressbar" aria-label="本月流量使用率" aria-valuenow={account.percentage} aria-valuemin={0} aria-valuemax={100}><i style={{ width: `${Math.max(0, Math.min(100, account.percentage))}%` }} className={account.over_threshold ? 'danger' : account.percentage >= account.threshold * .8 ? 'warning' : ''} /></div>
+        <button className="account-sparkline" onClick={onHistory} aria-label="查看历史流量">
+          <svg viewBox="0 0 320 58" preserveAspectRatio="none" aria-hidden="true">
+            <defs><linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#2dd4bf" stopOpacity=".28" /><stop offset="100%" stopColor="#2dd4bf" stopOpacity="0" /></linearGradient></defs>
+            <line x1="4" y1="48" x2="316" y2="48" stroke="#344665" strokeDasharray="2 3" />
+            {points.length > 0 && <><polygon points={`${points[0].split(',')[0]},48 ${points.join(' ')} ${points.at(-1)!.split(',')[0]},48`} fill={`url(#${gradientId})`} /><polyline points={points.join(' ')} fill="none" stroke="#2dd4bf" strokeWidth="2" vectorEffect="non-scaling-stroke" /><circle cx={points.at(-1)!.split(',')[0]} cy={points.at(-1)!.split(',')[1]} r="2.5" fill="#2dd4bf" /></>}
+          </svg>
+          {!points.length && <span>{historyError ? '历史流量加载失败，点击重试' : history ? '等待流量样本' : '加载流量趋势…'}</span>}
+        </button>
+        <div className="account-schedule"><CalendarClock size={18} /><span>{settings?.schedule_enabled ? `每日计划：${settings.start_time} 开机 · ${settings.stop_time} 关机` : '每日计划：无计划'}</span></div>
+      </div>
+      <footer className="account-card__footer">
+        <span className={account.stale ? 'stale' : ''}><Clock3 size={14} />{account.last_updated ? `${account.stale ? '数据待更新' : '最近同步'} ${formatTime(account.last_updated)}` : '等待首次同步'}</span>
+        {billingEnabled && <span title={account.billing_error}>账户余额 {account.balance === undefined ? '待同步' : `${currency}${account.balance.toFixed(2)}`}{account.billing_error ? ' · 账单同步失败' : ''}</span>}
       </footer>
     </article>
   )

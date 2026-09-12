@@ -363,7 +363,9 @@ function AccountCard({ account, settings, busy, keepAlive, billingEnabled, onAct
   const currency = account.currency === 'USD' ? '$' : '¥'
   const [history, setHistory] = useState<History | null>(null)
   const [historyError, setHistoryError] = useState(false)
+  const [hoveredPoint, setHoveredPoint] = useState<{ x: number; y: number; traffic: number; time: string } | null>(null)
   const gradientId = useId()
+  const sparklineRef = useRef<SVGSVGElement>(null)
   useEffect(() => {
     let active = true
     void api<History>(`/api/v1/accounts/${account.id}/history`).then((value) => {
@@ -372,11 +374,26 @@ function AccountCard({ account, settings, busy, keepAlive, billingEnabled, onAct
     return () => { active = false }
   }, [account.id, account.last_updated])
   const values = (history?.hourly || []).map((point) => point.traffic).filter(Number.isFinite)
+  const timestamps = (history?.hourly || []).map((point) => point.at)
   const min = Math.min(...values), span = Math.max(Math.max(...values) - min, .01)
   const points = values.map((value, index) => `${values.length === 1 ? 160 : 4 + index / (values.length - 1) * 312},${48 - (value - min) / span * 38}`)
   const running = account.instance_status === 'Running'
   const powerAvailable = running || account.instance_status === 'Stopped'
   const schedule = settings?.schedule_enabled ? `${settings.start_time} – ${settings.stop_time}` : '已关闭'
+
+  const handleSparklineMove = (event: React.MouseEvent<SVGSVGElement>) => {
+    if (!sparklineRef.current || values.length === 0) return
+    const rect = sparklineRef.current.getBoundingClientRect()
+    const x = event.clientX - rect.left
+    const progress = Math.max(0, Math.min(1, (x - 4) / 312))
+    const index = Math.round(progress * (values.length - 1))
+    if (index >= 0 && index < values.length) {
+      const coords = points[index].split(',').map(Number)
+      const traffic = values[index]
+      const time = new Date(timestamps[index]).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+      setHoveredPoint({ x: coords[0], y: coords[1], traffic, time })
+    }
+  }
   return (
     <article className={`account-card ${account.over_threshold ? 'account-card--alert' : ''}`}>
       <header className="account-card__header">
@@ -403,10 +420,10 @@ function AccountCard({ account, settings, busy, keepAlive, billingEnabled, onAct
         <div className="account-traffic-row"><span>本月流量使用率</span><strong>{account.percentage.toFixed(2)}%</strong></div>
         <div className="progress-track" role="progressbar" aria-label="本月流量使用率" aria-valuenow={account.percentage} aria-valuemin={0} aria-valuemax={100}><i style={{ width: `${Math.max(0, Math.min(100, account.percentage))}%` }} className={account.over_threshold ? 'danger' : account.percentage >= account.threshold * .8 ? 'warning' : ''} /></div>
         <button className="account-sparkline" onClick={onHistory} aria-label="查看历史流量">
-          <svg viewBox="0 0 320 58" preserveAspectRatio="none" aria-hidden="true">
+          <svg ref={sparklineRef} viewBox="0 0 320 58" preserveAspectRatio="none" aria-hidden="true" onMouseMove={handleSparklineMove} onMouseLeave={() => setHoveredPoint(null)}>
             <defs><linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="var(--brand)" stopOpacity=".28" /><stop offset="100%" stopColor="var(--brand)" stopOpacity="0" /></linearGradient></defs>
             <line x1="4" y1="48" x2="316" y2="48" stroke="var(--line-strong)" strokeDasharray="2 3" />
-            {points.length > 0 && <><polygon points={`${points[0].split(',')[0]},48 ${points.join(' ')} ${points.at(-1)!.split(',')[0]},48`} fill={`url(#${gradientId})`} /><polyline points={points.join(' ')} fill="none" stroke="var(--brand)" strokeWidth="2" vectorEffect="non-scaling-stroke" /><circle cx={points.at(-1)!.split(',')[0]} cy={points.at(-1)!.split(',')[1]} r="2.5" fill="var(--brand)" /></>}
+            {points.length > 0 && <><polygon points={`${points[0].split(',')[0]},48 ${points.join(' ')} ${points.at(-1)!.split(',')[0]},48`} fill={`url(#${gradientId})`} /><polyline points={points.join(' ')} fill="none" stroke="var(--brand)" strokeWidth="2" vectorEffect="non-scaling-stroke" /><circle cx={points.at(-1)!.split(',')[0]} cy={points.at(-1)!.split(',')[1]} r="2.5" fill="var(--brand)" />{hoveredPoint && <><circle cx={hoveredPoint.x} cy={hoveredPoint.y} r="4" fill="var(--brand)" stroke="var(--surface)" strokeWidth="1.5" /><rect x={hoveredPoint.x - 42} y={hoveredPoint.y - 28} width="84" height="22" rx="4" fill="var(--raise)" stroke="var(--line-strong)" strokeWidth="1" /><text x={hoveredPoint.x} y={hoveredPoint.y - 16} textAnchor="middle" fill="var(--ink)" fontSize="10" fontWeight="500">{hoveredPoint.traffic.toFixed(2)} GB</text><text x={hoveredPoint.x} y={hoveredPoint.y - 6} textAnchor="middle" fill="var(--muted)" fontSize="9">{hoveredPoint.time}</text></>}</>}
           </svg>
           {!points.length && <span>{historyError ? '历史流量加载失败，点击重试' : history ? '等待流量样本' : '加载流量趋势…'}</span>}
         </button>

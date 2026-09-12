@@ -18,7 +18,7 @@ UPSTREAM_BRANCH="${UPSTREAM_BRANCH:-main}"
 ORIGIN_REMOTE="${ORIGIN_REMOTE:-origin}"
 MAIN_BRANCH="${MAIN_BRANCH:-main}"
 
-PUSH=1
+PUSH=0
 VERIFY=1
 SYNC_MAIN=1
 DRY_RUN=0
@@ -32,20 +32,21 @@ usage() {
 功能分支已由 feature/telegram-daily-report 更名为 mod，默认同步 mod。
 如有通过 BRANCH 环境变量指定旧分支的命令或定时任务，请同步改为 BRANCH=mod。
 
-默认执行完整同步：
+默认执行本地同步：
   1. fetch upstream/origin；
   2. 检查 origin/${MAIN_BRANCH} 没有 fork 自定义提交；
-  3. 将本地 ${MAIN_BRANCH} 对齐到 ${UPSTREAM_REMOTE}/${UPSTREAM_BRANCH}，并 fast-forward 推送 origin/${MAIN_BRANCH}；
+  3. 将本地 ${MAIN_BRANCH} 对齐到 ${UPSTREAM_REMOTE}/${UPSTREAM_BRANCH}（不推送）；
   4. 将 ${BRANCH} rebase 到最新 ${UPSTREAM_REMOTE}/${UPSTREAM_BRANCH}；
   5. 同步 <上游版本>-mod；
   6. 运行 Go/Web 或 Docker 构建验证；
-  7. 验证成功后使用 force-with-lease 推送 ${BRANCH}。
+  7. 默认不推送，如需推送请使用 --push 选项。
 
 ${MAIN_BRANCH} 永远只作为上游镜像；Telegram 功能只保留在 ${BRANCH}。
 脚本不会 force-push ${MAIN_BRANCH}。如果检测到 ${MAIN_BRANCH} 含自定义提交或历史分叉，会直接停止。
 
 选项:
-  --no-push       完成本地同步/rebase/验证，但不推送任何分支
+  --push          完成同步后推送到远程（默认不推送）
+  --no-push       （已废弃，默认就不推送）
   --skip-verify   跳过构建验证
   --no-sync-main  不同步 fork 的 ${MAIN_BRANCH}
   --sync-main     显式同步 ${MAIN_BRANCH}（兼容旧用法；现在默认开启）
@@ -203,6 +204,7 @@ sync_main_branch() {
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --push) PUSH=1 ;;
     --no-push) PUSH=0 ;;
     --skip-verify) VERIFY=0 ;;
     --no-sync-main) SYNC_MAIN=0 ;;

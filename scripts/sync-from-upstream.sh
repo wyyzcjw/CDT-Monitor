@@ -22,6 +22,8 @@ PUSH=1
 VERIFY=1
 SYNC_MAIN=1
 DRY_RUN=0
+REBUILD_IMAGE=0
+RESTART_CONTAINER=0
 
 usage() {
   cat <<EOF_USAGE
@@ -47,6 +49,8 @@ ${MAIN_BRANCH} 永远只作为上游镜像；Telegram 功能只保留在 ${BRANC
   --skip-verify   跳过构建验证
   --no-sync-main  不同步 fork 的 ${MAIN_BRANCH}
   --sync-main     显式同步 ${MAIN_BRANCH}（兼容旧用法；现在默认开启）
+  --rebuild       同步完成后重建 Docker 镜像
+  --restart       重建镜像后重启容器（需配合 --rebuild）
   --dry-run       只 fetch 并显示 main/功能分支状态和目标 mod 版本，不改分支
   -h, --help      显示帮助
 EOF_USAGE
@@ -203,6 +207,8 @@ while [[ $# -gt 0 ]]; do
     --skip-verify) VERIFY=0 ;;
     --no-sync-main) SYNC_MAIN=0 ;;
     --sync-main) SYNC_MAIN=1 ;;
+    --rebuild) REBUILD_IMAGE=1 ;;
+    --restart) RESTART_CONTAINER=1 ;;
     --dry-run) DRY_RUN=1; PUSH=0 ;;
     -h|--help) usage; exit 0 ;;
     *) die "未知参数: $1" ;;
@@ -341,6 +347,37 @@ if [[ "$PUSH" -eq 1 ]]; then
   fi
 else
   log "已跳过 feature push"
+fi
+
+if [[ "$REBUILD_IMAGE" -eq 1 ]]; then
+  if ! command -v docker >/dev/null 2>&1; then
+    die "未找到 docker 命令，无法重建镜像"
+  fi
+
+  log "重建 Docker 镜像: cdt-monitor:${MOD_VERSION}"
+  if docker compose version >/dev/null 2>&1; then
+    docker compose build cdt-monitor
+  else
+    docker build --build-arg VERSION="$MOD_VERSION" -t "cdt-monitor:${MOD_VERSION}" .
+  fi
+  log "Docker 镜像构建完成"
+
+  if [[ "$RESTART_CONTAINER" -eq 1 ]]; then
+    log "重启容器"
+    if docker compose version >/dev/null 2>&1; then
+      docker compose down
+      docker compose up -d
+      log "容器已重启"
+      echo
+      docker compose ps
+    else
+      warn "未找到 docker compose，请手动重启容器"
+    fi
+  fi
+else
+  if [[ "$RESTART_CONTAINER" -eq 1 ]]; then
+    warn "--restart 需要配合 --rebuild 使用，已忽略"
+  fi
 fi
 
 log "完成"

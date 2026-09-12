@@ -384,8 +384,9 @@ function AccountCard({ account, settings, busy, keepAlive, billingEnabled, onAct
   const handleSparklineMove = (event: React.MouseEvent<SVGSVGElement>) => {
     if (!sparklineRef.current || values.length === 0) return
     const rect = sparklineRef.current.getBoundingClientRect()
-    const x = event.clientX - rect.left
-    const progress = Math.max(0, Math.min(1, (x - 4) / 312))
+    // 将浏览器像素坐标转换为 SVG viewBox 坐标系（viewBox="0 0 320 58"）
+    const svgX = ((event.clientX - rect.left) / rect.width) * 320
+    const progress = Math.max(0, Math.min(1, (svgX - 4) / 312))
     const index = Math.round(progress * (values.length - 1))
     if (index >= 0 && index < values.length) {
       const coords = points[index].split(',').map(Number)

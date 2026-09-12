@@ -42,6 +42,13 @@ fi
 UPSTREAM_VERSION=$(git show "${UPSTREAM_REMOTE}/main:version.txt" 2>/dev/null || echo "unknown")
 MOD_VERSION="${UPSTREAM_VERSION}-mod"
 
+# 重新构建前端（确保源码修改生效）
+log "重新构建前端..."
+cd web
+npm ci
+npm run build
+cd ..
+
 # 重建 Docker 镜像
 log "重建 Docker 镜像: cdt-monitor:${MOD_VERSION}"
 if docker compose version >/dev/null 2>&1; then

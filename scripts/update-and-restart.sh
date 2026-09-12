@@ -32,7 +32,11 @@ if [[ "$CURRENT_BRANCH" != "$BRANCH" ]]; then
 fi
 
 log "Rebase 到最新上游代码..."
-git rebase "${UPSTREAM_REMOTE}/main"
+if ! git rebase "${UPSTREAM_REMOTE}/main"; then
+  log "Rebase 遇到冲突，正在中止..."
+  git rebase --abort
+  die "Rebase 失败，请手动解决冲突后重试"
+fi
 
 # 获取版本号
 UPSTREAM_VERSION=$(git show "${UPSTREAM_REMOTE}/main:version.txt" 2>/dev/null || echo "unknown")

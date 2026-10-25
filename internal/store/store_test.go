@@ -537,7 +537,9 @@ func TestTraffic24HoursAgoAndAroundTime(t *testing.T) {
 	defer st.Close()
 	ctx := context.Background()
 
-	now := time.Now().UTC()
+	// Samples are stored at hour boundaries and TrafficAroundTime searches ±45min,
+	// so align to the hour to keep the test independent of the current minute.
+	now := time.Now().UTC().Truncate(time.Hour)
 	t24Ago := now.Add(-24 * time.Hour)
 	t12Ago := now.Add(-12 * time.Hour)
 

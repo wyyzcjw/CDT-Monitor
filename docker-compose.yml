@@ -3,8 +3,8 @@ services:
     build:
       context: .
       args:
-        VERSION: "v2.0.5-mod"
-    image: cdt-monitor:v2.0.5-mod
+        VERSION: "v2.0.8-mod"
+    image: cdt-monitor:v2.0.8-mod
     container_name: cdt-monitor
     restart: unless-stopped
     init: true

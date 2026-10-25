@@ -263,6 +263,7 @@ test('dashboard billing, history precision and settings remain usable', async ({
   await expect(page.locator('.metric--amber .metric-icon')).toBeVisible()
   await page.screenshot({ path: testInfo.outputPath('dashboard-billing-desktop.png'), fullPage: true })
 
+  await page.getByLabel('实例更多操作').first().click()
   await page.getByRole('button', { name: '实例设置' }).click()
   const modal = page.locator('.instance-settings-modal')
   await expect(modal).toBeVisible()

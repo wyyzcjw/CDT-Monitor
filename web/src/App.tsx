@@ -477,8 +477,21 @@ function AccountCard({ account, settings, busy, keepAlive, billingEnabled, onAct
           <svg ref={sparklineRef} viewBox="0 0 320 58" preserveAspectRatio="none" aria-hidden="true" onMouseMove={handleSparklineMove} onMouseLeave={() => setHoveredPoint(null)}>
             <defs><linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="var(--brand)" stopOpacity=".28" /><stop offset="100%" stopColor="var(--brand)" stopOpacity="0" /></linearGradient></defs>
             <line x1="4" y1="48" x2="316" y2="48" stroke="var(--line-strong)" strokeDasharray="2 3" />
-            {points.length > 0 && <><polygon points={`${points[0].split(',')[0]},48 ${points.join(' ')} ${points.at(-1)!.split(',')[0]},48`} fill={`url(#${gradientId})`} /><polyline points={points.join(' ')} fill="none" stroke="var(--brand)" strokeWidth="2" vectorEffect="non-scaling-stroke" /><circle cx={points.at(-1)!.split(',')[0]} cy={points.at(-1)!.split(',')[1]} r="2.5" fill="var(--brand)" />{hoveredPoint && <><circle cx={hoveredPoint.x} cy={hoveredPoint.y} r="2.5" fill="var(--brand)" stroke="var(--surface)" strokeWidth="1.5" /><rect x={hoveredPoint.x - 26} y={hoveredPoint.y - 26} width="52" height="20" rx="4" fill="var(--raise)" stroke="var(--line-strong)" strokeWidth="0.5" /><text x={hoveredPoint.x} y={hoveredPoint.y - 14} textAnchor="middle" fill="var(--ink)" fontSize="9" fontWeight="600">{hoveredPoint.traffic.toFixed(2)} GB</text><text x={hoveredPoint.x} y={hoveredPoint.y - 6} textAnchor="middle" fill="var(--muted)" fontSize="8">{hoveredPoint.time}</text></>}</>}
+            {points.length > 0 && <><polygon points={`${points[0].split(',')[0]},48 ${points.join(' ')} ${points.at(-1)!.split(',')[0]},48`} fill={`url(#${gradientId})`} /><polyline points={points.join(' ')} fill="none" stroke="var(--brand)" strokeWidth="2" vectorEffect="non-scaling-stroke" />{hoveredPoint && <line x1={hoveredPoint.x} y1="4" x2={hoveredPoint.x} y2="48" stroke="var(--line-strong)" strokeDasharray="2 3" vectorEffect="non-scaling-stroke" />}</>}
           </svg>
+          {points.length > 0 && (() => {
+            const [lastX, lastY] = points.at(-1)!.split(',').map(Number)
+            return <i className="sparkline-dot" style={{ left: `${lastX / 3.2}%`, top: `${lastY / .58}%` }} />
+          })()}
+          {hoveredPoint && <>
+            <i className="sparkline-dot sparkline-dot--hover" style={{ left: `${hoveredPoint.x / 3.2}%`, top: `${hoveredPoint.y / .58}%` }} />
+            <div
+              className={`sparkline-tooltip${hoveredPoint.y < 29 ? ' sparkline-tooltip--below' : ''}${hoveredPoint.x < 40 ? ' sparkline-tooltip--start' : hoveredPoint.x > 280 ? ' sparkline-tooltip--end' : ''}`}
+              style={{ left: `${hoveredPoint.x / 3.2}%`, top: `${hoveredPoint.y / .58}%` }}
+            >
+              <b>{hoveredPoint.traffic.toFixed(2)} GB</b><small>{hoveredPoint.time}</small>
+            </div>
+          </>}
           {!points.length && <span>{historyError ? '历史流量加载失败，点击重试' : history ? '等待流量样本' : '加载流量趋势…'}</span>}
         </button>
         <div className="account-schedule"><CalendarClock size={18} /><span>{settings?.schedule_enabled ? `每日计划：${settings.start_time} 开机 · ${settings.stop_time} 关机` : '每日计划：无计划'}</span></div>
